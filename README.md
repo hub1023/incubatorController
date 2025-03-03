@@ -6,7 +6,7 @@ This project is an Egg Incubator Controller powered by an STM32 microcontroller,
 Project Goals
 
 This project aims to:
-1.	Implement a state machine for efficient incubation control.
+1.	Implement a finite state machine (FSM) control table for efficient incubation management.
 2.	Leverage ChatGPT for CI/CD in a manual engineering workflow, including:
 
   	-- Code Review: Regularly reviewing code with ChatGPT to identify issues and improve quality.
