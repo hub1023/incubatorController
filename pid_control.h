@@ -15,7 +15,8 @@
 
 
 float pidControl(float error, float feedForward, PIDControl* pidCtrl);
-void adjustHeating(float pidOutput);
+void adjustHeating(float pidOutput, float targetTemperature, float currentTemperature);
+//void adjustHeating(float currentTemperature, float targetTemperature);
 void controlTemperature(void);
 void controlVentilation(void);
 
