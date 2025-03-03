@@ -32,6 +32,9 @@ static int tuningDone = 0; // Ensure auto-tuning only happens once
 // Feed-Forward Gain
 #define KF 1.5f
 
+// Temperature Deadband
+#define DEADBAND 0.5f // Adjust this to a suitable range for your system
+
 // Function to auto-tune PID parameters
 void autoTunePID(PIDControl* pidCtrl) {
     pidCtrl->Kp = 0.6f * KU;
@@ -39,15 +42,13 @@ void autoTunePID(PIDControl* pidCtrl) {
     pidCtrl->Kd = 0.075f * KU * TU;
 }
 
-// PID Control Function
+// PID Control Function with Anti-Windup and Output Clamping
 float pidControl(float error, float feedForward, PIDControl* pidCtrl) {
-    // Ensure auto-tuning only happens once
     if (!tuningDone) {
         autoTunePID(pidCtrl);
         tuningDone = 1;
     }
 
-    // Define the PID components
     float proportional, integral, derivative, pidOutput;
 
     // Proportional Term
@@ -59,6 +60,7 @@ float pidControl(float error, float feedForward, PIDControl* pidCtrl) {
     } else {
         pidCtrl->integral = 0.0; // Reset integral if the error is small
     }
+    // Apply integral windup limits
     pidCtrl->integral = fmaxf(fminf(pidCtrl->integral, MAX_INTEGRAL), MIN_INTEGRAL);
     integral = pidCtrl->Ki * pidCtrl->integral;
 
@@ -71,35 +73,46 @@ float pidControl(float error, float feedForward, PIDControl* pidCtrl) {
     // Compute Final PID Output with Feed-Forward
     pidOutput = proportional + integral + derivative + (KF * feedForward);
 
-    // Apply Output Limits
-    pidOutput = fmaxf(fminf(pidOutput, MAX_OUTPUT), MIN_OUTPUT);
+    // Apply Output Clamping to prevent saturation
+    if (pidOutput > MAX_OUTPUT) {
+        pidOutput = MAX_OUTPUT;
+    } else if (pidOutput < MIN_OUTPUT) {
+        pidOutput = MIN_OUTPUT;
+    }
 
     return pidOutput;
 }
 
 // Function to adjust heating based on PID output
-void adjustHeating(float pidOutput) {
+void adjustHeating(float pidOutput, float targetTemperature, float currentTemperature) {
     // Limit the PID output to a reasonable range
     pidOutput = fminf(fmaxf(pidOutput, lastPidOutput - MAX_PID_RATE_CHANGE),
                       lastPidOutput + MAX_PID_RATE_CHANGE);
 
-    // Depending on the output from the PID controller, adjust the heater
-    if (pidOutput > 0) {
+    // Check if we are within the deadband range of the target temperature
+    if (fabs(targetTemperature - currentTemperature) < DEADBAND) {
+        // If within deadband, turn off the heater
+        stopHeating();
+    } else if (pidOutput > 0) {
+        // Turn heater ON if PID output is positive
         startHeating();
     } else {
+        // Turn heater OFF if PID output is negative or zero
         stopHeating();
     }
 
     // Format the message with PID output and send it via Serial2
     snprintf(tx_data, sizeof(tx_data), "pidOutput %.1f,", pidOutput);
     Serial2_Write(tx_data);
+    snprintf(tx_data, sizeof(tx_data), "error %.1f,", (targetTemperature - currentTemperature));
+        Serial2_Write(tx_data);
 
     lastPidOutput = pidOutput;
 }
 
 // Function to control temperature
 void controlTemperature(void) {
-    float targetTemperature = setpoints.values[2]; // Target heating temperature (HTR_TEMP-SP)
+    float targetTemperature = setpoints.values[1]; // Target heating temperature (HTR_TEMP-SP)
     float currentTemperature = sensorData.temperature; // Read from temperature sensor
 
     // Calculate temperature error
@@ -110,7 +123,7 @@ void controlTemperature(void) {
     float pidOutput = pidControl(temperatureError, feedForward, &pidCtrl);
 
     // Adjust heating based on PID output
-    adjustHeating(pidOutput);
+    adjustHeating(pidOutput, targetTemperature, currentTemperature);
 }
 
 // Function to control the ventilation system
